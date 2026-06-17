@@ -35,5 +35,5 @@ jobs:
             | Workflow | test-and-build-image2 |
             | Repository | cloudbees-days/hackers-prusg |
             | Branch | main |
-            | Outcome | ${{ steps.gha-run.outcome }} |
+            | Status | Completed successfully |
           format: MARKDOWN
