@@ -9,11 +9,8 @@ permissions:
   id-token: write
 jobs:
   run-test-and-build-image2:
-    outputs:
-      RESULT: ${{ steps.gha-run.outcome }}
     steps:
       - name: Run test-and-build-image2
-        id: gha-run
         uses: cloudbees-io/ghactions-run-workflow@v2
         with:
           token: ${{ secrets.WES_GH_TOKEN }}
@@ -25,11 +22,8 @@ jobs:
           test-result-location: junit.xml
 
   run-test-and-build-image:
-    outputs:
-      RESULT: ${{ steps.gha-run.outcome }}
     steps:
       - name: Run test-and-build-image
-        id: gha-run
         uses: cloudbees-io/ghactions-run-workflow@v2
         with:
           token: ${{ secrets.WES_GH_TOKEN }}
@@ -51,8 +45,5 @@ jobs:
           content: |-
             ## workflow3 — Parallel GitHub Actions Run Results
 
-            | Workflow | Result |
-            |----------|--------|
-            | test-and-build-image2 | ${{ needs.run-test-and-build-image2.outputs.RESULT }} |
-            | test-and-build-image | ${{ needs.run-test-and-build-image.outputs.RESULT }} |
+            Both `test-and-build-image2` and `test-and-build-image` GitHub Actions workflows were triggered in parallel and have completed. See each job's status above for its individual pass/fail result.
           format: MARKDOWN
