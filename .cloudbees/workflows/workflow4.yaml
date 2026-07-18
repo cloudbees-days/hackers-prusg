@@ -1,0 +1,110 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: workflow4
+on:
+  workflow_dispatch:
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+  id-token: write
+jobs:
+  readiness-check:
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+      - name: Verify readiness for promotion
+        kind: test
+        uses: docker://alpine/git:latest
+        run: |
+          echo "Readiness check: verifying build/test status before promoting to UAT"
+
+  promote-uat:
+    needs: readiness-check
+    environment: UAT
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+      - uses: cashokannamalai/kubeconfig@v1
+        name: Set kubeconfig
+        with:
+          secname: ${{ secrets.kubeconfig }}
+      - name: Deploy to UAT cluster
+        uses: cloudbees-io/kustomize-deploy@v1
+        kind: deploy
+        with:
+          kustomization-base-dir: ${{ cloudbees.workspace }}/k8s/base
+          kustomization-overlays-dir: ${{ cloudbees.workspace }}/k8s/overlays/mlqa
+          environment-variables: "{}"
+      - name: Publish evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Deployed to UAT
+            Running hackers-organized:${{ cloudbees.scm.sha }}
+          format: MARKDOWN
+
+  quality-gate-check:
+    needs: promote-uat
+    steps:
+      - name: Check SonarQube quality gate
+        id: QualityGate
+        uses: docker://alpine/git:latest
+        run: |
+          apk add --no-cache curl jq
+          curl -u ${{ secrets.SONAR_USER }}:${{ secrets.SONAR_TOKEN }} \
+          "https://sonarqube.cb-demos.io/api/qualitygates/project_status?projectKey=HackersOrganized" \
+          -o quality-gate.json
+          STATUS=$(jq -r '.projectStatus.status' quality-gate.json)
+          echo "Quality gate status: ${STATUS}"
+          if [ "${STATUS}" != "OK" ]; then
+            echo "Quality gate failed with status: ${STATUS}"
+            exit 1
+          fi
+
+  production-approval:
+    needs: quality-gate-check
+    with:
+      approvers: "klee@cloudbees.com"
+      disallowLaunchByUser: false
+      instructions: "Please approve promotion of hackers-prusg to Production. UAT quality gate has passed."
+    timeout-minutes: 4320
+    delegates: cloudbees-io/manual-approval/custom-job.yml@v1
+
+  promote-production:
+    needs: production-approval
+    environment: Production
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+      - uses: cashokannamalai/kubeconfig@v1
+        name: Set kubeconfig
+        with:
+          secname: ${{ secrets.kubeconfig }}
+      - name: Deploy to Production cluster
+        uses: cloudbees-io/kustomize-deploy@v1
+        kind: deploy
+        with:
+          kustomization-base-dir: ${{ cloudbees.workspace }}/k8s/base
+          kustomization-overlays-dir: ${{ cloudbees.workspace }}/k8s/overlays/prod
+          environment-variables: "{}"
+      - name: Publish evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## Deployed to Production
+            Running hackers-organized:${{ cloudbees.scm.sha }}
+          format: MARKDOWN
+
+metadata:
+  stages/v1alpha1:
+    - name: Readiness Check
+      jobs:
+        - readiness-check
+    - name: UAT
+      jobs:
+        - promote-uat
+        - quality-gate-check
+    - name: Production
+      jobs:
+        - production-approval
+        - promote-production
